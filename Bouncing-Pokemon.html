@@ -70,7 +70,7 @@
 // ============================================================
 //  SET YOUR CHANNEL NAMES HERE (lowercase, no # needed)
 // ============================================================
-var CHANNELS = ['deemonrider', 'whaonelly'];
+var CHANNELS = ['DeemonRider', 'WhaoNelly', 'RecommendedPokeball'];
 // ============================================================
 
 var POKEMON_IDS = {
@@ -259,7 +259,8 @@ var ALIASES = {
 
 function getPokeId(name) {
   if (!name) return null;
-  var n = name.toLowerCase().trim().replace(/\u00e9/g,'e').replace(/['']/g,"'");
+  // Strip anything in parentheses — e.g. "Pikachu (F)", "Unown (I)" → "Pikachu", "Unown"
+  var n = name.replace(/\s*\(.*?\)\s*/g, '').toLowerCase().trim().replace(/\u00e9/g,'e').replace(/['']/g,"'");
   if (POKEMON_IDS[n]) return POKEMON_IDS[n];
   if (ALIASES[n]) return ALIASES[n];
   var s = n.replace(/[^a-z0-9]/g,'');
@@ -280,38 +281,61 @@ function showBanner(name) {
   bannerTimer = setTimeout(function() { banner.classList.remove('show'); }, 10000);
 }
 
+// URL sources in priority order:
+// 1. PokeAPI showdown animated GIF (by numeric ID)
+// 2. msikma/pokesprite static PNG (by numeric ID) — good coverage fallback
+// 3. Hardcoded Pokéball GIF — guaranteed fallback
+var POKEBALL_GIF = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/poke-ball.png';
+
+function getSpriteUrls(id) {
+  return [
+    'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/showdown/' + id + '.gif',
+    'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/' + id + '.png'
+  ];
+}
+
+function resolveUrl(urls, index, callback) {
+  if (index >= urls.length) { callback(POKEBALL_GIF); return; }
+  var img = new Image();
+  img.onload = function() { callback(urls[index]); };
+  img.onerror = function() { resolveUrl(urls, index + 1, callback); };
+  img.src = urls[index];
+}
+
 function spawnSprites(id) {
-  var url = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/showdown/' + id + '.gif';
-  var W = overlay.offsetWidth, H = overlay.offsetHeight;
-  for (var i = 0; i < 10; i++) {
-    (function() {
-      var img = document.createElement('img');
-      img.className = 'poke-sprite';
-      img.src = url;
-      var size = 115, x = Math.random()*(W-size), y = Math.random()*(H-size-40);
-      var spd = 1.4+Math.random()*1.8, ang = Math.random()*Math.PI*2;
-      var vx = Math.cos(ang)*spd, vy = Math.sin(ang)*spd;
-      var sc = 0.8+Math.random()*0.5;
-      img.style.cssText = 'left:'+x+'px;top:'+y+'px;transform:scale('+sc+');opacity:0;';
-      overlay.appendChild(img);
-      setTimeout(function(){ img.style.opacity='1'; }, 50);
-      var aid;
-      function step() {
-        x+=vx; y+=vy;
-        var maxX=W-size*sc, maxY=H-size*sc-40;
-        if(x<=0){x=0;vx=Math.abs(vx);} if(x>=maxX){x=maxX;vx=-Math.abs(vx);}
-        if(y<=0){y=0;vy=Math.abs(vy);} if(y>=maxY){y=maxY;vy=-Math.abs(vy);}
-        img.style.left=x+'px'; img.style.top=y+'px';
+  var urls = getSpriteUrls(id);
+  resolveUrl(urls, 0, function(resolvedUrl) {
+    var W = overlay.offsetWidth, H = overlay.offsetHeight;
+    for (var i = 0; i < 10; i++) {
+      (function() {
+        var img = document.createElement('img');
+        img.className = 'poke-sprite';
+        img.src = resolvedUrl;
+        var size = 115, x = Math.random()*(W-size), y = Math.random()*(H-size-40);
+        var spd = 1.4+Math.random()*1.8, ang = Math.random()*Math.PI*2;
+        var vx = Math.cos(ang)*spd, vy = Math.sin(ang)*spd;
+        var sc = 0.8+Math.random()*0.5;
+        img.style.cssText = 'left:'+x+'px;top:'+y+'px;transform:scale('+sc+');opacity:0;';
+        overlay.appendChild(img);
+        setTimeout(function(){ img.style.opacity='1'; }, 50);
+        var aid;
+        function step() {
+          x+=vx; y+=vy;
+          var maxX=W-size*sc, maxY=H-size*sc-40;
+          if(x<=0){x=0;vx=Math.abs(vx);} if(x>=maxX){x=maxX;vx=-Math.abs(vx);}
+          if(y<=0){y=0;vy=Math.abs(vy);} if(y>=maxY){y=maxY;vy=-Math.abs(vy);}
+          img.style.left=x+'px'; img.style.top=y+'px';
+          aid=requestAnimationFrame(step);
+        }
         aid=requestAnimationFrame(step);
-      }
-      aid=requestAnimationFrame(step);
-      setTimeout(function(){
-        cancelAnimationFrame(aid);
-        img.style.transition='opacity 0.5s'; img.style.opacity='0';
-        setTimeout(function(){ if(img.parentNode) img.parentNode.removeChild(img); },500);
-      },10000);
-    })();
-  }
+        setTimeout(function(){
+          cancelAnimationFrame(aid);
+          img.style.transition='opacity 0.5s'; img.style.opacity='0';
+          setTimeout(function(){ if(img.parentNode) img.parentNode.removeChild(img); },500);
+        },10000);
+      })();
+    }
+  });
 }
 
 function handleSpawn(name) {
