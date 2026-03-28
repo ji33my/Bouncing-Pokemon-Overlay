@@ -68,7 +68,7 @@
 // ============================================================
 //  CHANNELS TO MONITOR (lowercase, no # needed)
 // ============================================================
-var CHANNELS = ['deemonrider', 'whaonelly', 'recommendedpokeball'];
+var CHANNELS = ['whaonelly', 'recommendedpokeball'];
 // ============================================================
 
 var SPRITE_GIF_SOURCES = [
@@ -282,7 +282,7 @@ var pokeSpritesCount = 10;
 var BOUNCYSPRITES_RE = /^!bouncysprites\s+(\d+)$/i;
 
 // Wild user join banner state
-var wildUserEnabled = true;   // on by default
+var wildUserEnabled = false;   // on by default
 var wildUserSeen    = new Set(); // usernames seen this OBS session — cleared on page load or toggle
 
 // ─── Bot blocklist — these users will never trigger a first-time join banner ──
