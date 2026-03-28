@@ -68,7 +68,7 @@
 // ============================================================
 //  CHANNELS TO MONITOR (lowercase, no # needed)
 // ============================================================
-var CHANNELS = ['whaonelly', 'recommendedpokeball'];
+var CHANNELS = ['deemonrider', 'whaonelly', 'recommendedpokeball'];
 // ============================================================
 
 var SPRITE_GIF_SOURCES = [
@@ -285,6 +285,41 @@ var BOUNCYSPRITES_RE = /^!bouncysprites\s+(\d+)$/i;
 var wildUserEnabled = true;   // on by default
 var wildUserSeen    = new Set(); // usernames seen this OBS session — cleared on page load or toggle
 
+// ─── Bot blocklist — these users will never trigger a first-time join banner ──
+// Add any extra bot usernames (all lowercase) to CUSTOM_BOT_BLOCKLIST below.
+var CUSTOM_BOT_BLOCKLIST = [
+  // Add your own bots here e.g.: 'mybot', 'anotherbot'
+];
+
+var KNOWN_BOTS = new Set([
+  // Pokemon bots
+  'pokemoncommunitygame', 'recommendedpokeball',
+  // StreamElements & Streamlabs
+  'streamelements', 'streamlabs', 'streamlabsbot',
+  // Nightbot
+  'nightbot',
+  // Moobot
+  'moobot',
+  // Fossabot
+  'fossabot',
+  // Wizebot
+  'wizebot',
+  // Botisimo
+  'botisimo',
+  // CommanderRoot tools
+  'commanderroot',
+  // Stay hydrated bot
+  'stayhydrated',
+  // logviewer/chat tools
+  'electricallongboard', 'anotherttvviewer', 'twitchstreamtracker',
+  // Sery_bot (common poll/hype bot)
+  'sery_bot',
+  // Streamer.bot
+  'streamerbot',
+  // Generic patterns — anything ending in common bot suffixes
+  // (handled via regex check below, not this Set)
+].concat(CUSTOM_BOT_BLOCKLIST));
+
 // ─── Name normalisation ───────────────────────────────────────────────────────
 function toSlug(s) {
   return s.toLowerCase()
@@ -468,9 +503,19 @@ function handleBouncy(raw, sourceIndex) {
 }
 
 // ─── Wild user join banner ───────────────────────────────────────────────────
+function isKnownBot(nick) {
+  if (KNOWN_BOTS.has(nick)) return true;
+  // Also catch anything matching common bot name patterns
+  if (/bot$/i.test(nick))    return true;  // ends in "bot"
+  if (/^bot/i.test(nick))    return true;  // starts with "bot"
+  if (/_bot_?$/i.test(nick)) return true;  // ends in "_bot"
+  return false;
+}
+
 function handleUserJoin(nick) {
   if (!wildUserEnabled) return;
   if (/^justinfan/i.test(nick)) return;  // filter anonymous viewers
+  if (isKnownBot(nick)) return;          // filter known bots
   if (wildUserSeen.has(nick)) return;    // already seen this session
 
   wildUserSeen.add(nick);
