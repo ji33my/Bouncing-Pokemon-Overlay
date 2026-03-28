@@ -66,9 +66,9 @@
 
 <script>
 // ============================================================
-//  SET YOUR CHANNEL NAME HERE (lowercase, no # needed)
+//  CHANNELS TO MONITOR (lowercase, no # needed)
 // ============================================================
-var CHANNEL = 'deemonrider', 'WhaoNelly', 'RecommendedPokeball';
+var CHANNELS = ['deemonrider', 'whaonelly', 'recommendedpokeball'];
 // ============================================================
 
 var SPRITE_GIF = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/showdown/';
@@ -482,13 +482,12 @@ function showError(msg) {
   setTimeout(function() { if (el.parentNode) el.parentNode.removeChild(el); }, 5500);
 }
 
-// ─── Twitch IRC ───────────────────────────────────────────────────────────────
-var ws = null, reconnTimer = null, pingTimer = null;
-var reconnAttempts = 0;
+// ─── Twitch IRC (multi-channel) ───────────────────────────────────────────────
+var connections = {}; // keyed by channel name
 
-function parseLine(line) {
+function parseLine(line, socket) {
   if (!line) return;
-  if (line.indexOf('PING') === 0) { ws.send('PONG :tmi.twitch.tv'); return; }
+  if (line.indexOf('PING') === 0) { socket.send('PONG :tmi.twitch.tv'); return; }
   var m = line.match(/:([^!]+)![^ ]+ PRIVMSG #[^ ]+ :(.+)/);
   if (!m) return;
   var nick = m[1].toLowerCase();
@@ -505,46 +504,52 @@ function parseLine(line) {
   if (sm) handleSpawn(sm[1].trim());
 }
 
-function connectWS() {
-  if (ws) { ws.onclose = null; ws.close(); }
-  clearTimeout(reconnTimer);
-  clearInterval(pingTimer);
+function connectChannel(channel) {
+  var state = connections[channel] || { attempts: 0, ws: null, pingTimer: null, reconnTimer: null };
+  connections[channel] = state;
 
+  if (state.ws) { state.ws.onclose = null; state.ws.close(); }
+  clearTimeout(state.reconnTimer);
+  clearInterval(state.pingTimer);
+
+  var ws;
   try { ws = new WebSocket('wss://irc-ws.chat.twitch.tv:443'); }
-  catch(e) { showError('ERROR: Could not create WebSocket — ' + e.message); return; }
+  catch(e) { showError('ERROR: Could not connect to #' + channel + ' — ' + e.message); return; }
+  state.ws = ws;
 
   var nick = 'justinfan' + Math.floor(Math.random() * 99999);
 
   ws.onopen = function() {
     ws.send('PASS SCHMOOPIIE');
     ws.send('NICK ' + nick);
-    ws.send('JOIN #' + CHANNEL);
-    pingTimer = setInterval(function() {
+    ws.send('JOIN #' + channel);
+    state.pingTimer = setInterval(function() {
       if (ws && ws.readyState === 1) ws.send('PING :tmi.twitch.tv');
     }, 240000);
-    reconnAttempts = 0;
+    state.attempts = 0;
   };
 
   ws.onmessage = function(e) {
-    e.data.split('\r\n').forEach(function(line) { parseLine(line); });
+    e.data.split('\r\n').forEach(function(line) { parseLine(line, ws); });
   };
 
-  ws.onerror = function() { showError('ERROR: WebSocket connection failed'); };
+  ws.onerror = function() { showError('ERROR: WebSocket failed for #' + channel); };
 
   ws.onclose = function() {
-    clearInterval(pingTimer);
-    reconnAttempts++;
-    var delay = Math.min(reconnAttempts * 3000, 30000);
-    if (reconnAttempts <= 10) {
-      showError('DISCONNECTED — reconnecting in ' + (delay/1000) + 's (' + reconnAttempts + '/10)');
-      reconnTimer = setTimeout(connectWS, delay);
+    clearInterval(state.pingTimer);
+    state.attempts++;
+    var delay = Math.min(state.attempts * 3000, 30000);
+    if (state.attempts <= 10) {
+      showError('DISCONNECTED from #' + channel + ' — reconnecting in ' + (delay/1000) + 's (' + state.attempts + '/10)');
+      state.reconnTimer = setTimeout(function() { connectChannel(channel); }, delay);
     } else {
-      showError('FAILED: Could not reconnect after 10 attempts. Reload the page.');
+      showError('FAILED: Could not reconnect to #' + channel + ' after 10 attempts. Reload the page.');
     }
   };
 }
 
-connectWS();
+// Connect to all channels
+CHANNELS.forEach(function(ch) { connectChannel(ch); });
 </script>
 </body>
 </html>
