@@ -244,7 +244,14 @@ var POKEMON_IDS = {
   annihilape:979,clodsire:980,farigiraf:981,dudunsparce:982,kingambit:983,
   frigibax:996,arctibax:997,baxcalibur:998,gimmighoul:999,gholdengo:1000,
   koraidon:1007,miraidon:1008,dipplin:1011,poltchageist:1012,sinistcha:1013,
-  ogerpon:1017,archaludon:1018,hydrapple:1019,terapagos:1024,pecharunt:1025
+  ogerpon:1017,archaludon:1018,hydrapple:1019,terapagos:1024,pecharunt:1025,
+  // Previously missing entries
+  nidorina:30,nidoqueen:31,nidorino:33,nidoking:34,
+  unown:201,
+  runerigus:867,
+  basculegion:902,
+  enamorus:905,
+  okidogi:1014,munkidori:1015,fezandipiti:1016
 };
 
 var ALIASES = {
@@ -282,43 +289,8 @@ var pokeSpritesCount = 10;
 var BOUNCYSPRITES_RE = /^!bouncysprites\s+(\d+)$/i;
 
 // Wild user join banner state
-var wildUserEnabled = false;   // on by default
+var wildUserEnabled = true;   // on by default
 var wildUserSeen    = new Set(); // usernames seen this OBS session — cleared on page load or toggle
-
-// ─── Bot blocklist — these users will never trigger a first-time join banner ──
-// Add any extra bot usernames (all lowercase) to CUSTOM_BOT_BLOCKLIST below.
-var CUSTOM_BOT_BLOCKLIST = [
-  // Add your own bots here e.g.: 'mybot', 'anotherbot'
-];
-
-var KNOWN_BOTS = new Set([
-  // Pokemon bots
-  'pokemoncommunitygame', 'recommendedpokeball',
-  // StreamElements & Streamlabs
-  'streamelements', 'streamlabs', 'streamlabsbot',
-  // Nightbot
-  'nightbot',
-  // Moobot
-  'moobot',
-  // Fossabot
-  'fossabot',
-  // Wizebot
-  'wizebot',
-  // Botisimo
-  'botisimo',
-  // CommanderRoot tools
-  'commanderroot',
-  // Stay hydrated bot
-  'stayhydrated',
-  // logviewer/chat tools
-  'electricallongboard', 'anotherttvviewer', 'twitchstreamtracker',
-  // Sery_bot (common poll/hype bot)
-  'sery_bot',
-  // Streamer.bot
-  'streamerbot',
-  // Generic patterns — anything ending in common bot suffixes
-  // (handled via regex check below, not this Set)
-].concat(CUSTOM_BOT_BLOCKLIST));
 
 // ─── Name normalisation ───────────────────────────────────────────────────────
 function toSlug(s) {
@@ -397,9 +369,49 @@ function spriteExists(url) {
     .catch(function() { return false; });
 }
 
+// ─── Step 4 (deep only): Levenshtein fuzzy match ──────────────────────────────
+// Runs after all other lookups fail. Checks the input against every key in
+// POKEMON_IDS and ALIASES and returns the closest match if within MAX_DISTANCE edits.
+// Only used for !bouncy — never for PCG spawns.
+var FUZZY_MAX_DISTANCE = 3; // max typo distance to accept
+
+function levenshtein(a, b) {
+  var m = a.length, n = b.length;
+  // Quick exits
+  if (m === 0) return n;
+  if (n === 0) return m;
+  if (Math.abs(m - n) > FUZZY_MAX_DISTANCE) return FUZZY_MAX_DISTANCE + 1;
+  var prev = [], curr = [];
+  for (var j = 0; j <= n; j++) prev[j] = j;
+  for (var i = 1; i <= m; i++) {
+    curr[0] = i;
+    for (var j2 = 1; j2 <= n; j2++) {
+      curr[j2] = a[i-1] === b[j2-1]
+        ? prev[j2-1]
+        : 1 + Math.min(prev[j2-1], prev[j2], curr[j2-1]);
+    }
+    var tmp = prev; prev = curr; curr = tmp;
+  }
+  return prev[n];
+}
+
+function fuzzyLocalLookup(baseKey) {
+  var best = null, bestDist = FUZZY_MAX_DISTANCE + 1;
+
+  function check(key, id) {
+    var d = levenshtein(baseKey, key);
+    if (d < bestDist) { bestDist = d; best = id; }
+  }
+
+  for (var pk in POKEMON_IDS) check(pk, POKEMON_IDS[pk]);
+  for (var ak in ALIASES)     check(ak, ALIASES[ak]);
+
+  return bestDist <= FUZZY_MAX_DISTANCE ? best : null;
+}
+
 // ─── Master lookup chain ──────────────────────────────────────────────────────
 // For PCG spawns: fast path only (local + direct PokeAPI)
-// For !bouncy: full deep search including species varieties
+// For !bouncy: full deep search including species varieties + fuzzy fallback
 function resolveSprite(parsed, deep) {
   // Step 1: local map
   var localId = localLookup(parsed.baseKey, parsed.formKey);
@@ -451,7 +463,22 @@ function resolveSprite(parsed, deep) {
         return id !== null ? id : trySpecies();
       });
     }
-    return trySpecies();
+    return trySpecies().then(function(id) {
+      if (id !== null) return id;
+
+      // Step 4 (deep/!bouncy only): Levenshtein fuzzy match against local map
+      // e.g. "zapados" → "zapdos", "charzard" → "charizard"
+      var fuzzyId = fuzzyLocalLookup(parsed.baseKey);
+      if (fuzzyId !== null) return fuzzyId;
+
+      // Also try fuzzy on root word if it differs (e.g. "mausholde" → "maushold")
+      if (root !== parsed.baseKey) {
+        var fuzzyRootId = fuzzyLocalLookup(root);
+        if (fuzzyRootId !== null) return fuzzyRootId;
+      }
+
+      return null;
+    });
   });
 }
 
@@ -503,19 +530,9 @@ function handleBouncy(raw, sourceIndex) {
 }
 
 // ─── Wild user join banner ───────────────────────────────────────────────────
-function isKnownBot(nick) {
-  if (KNOWN_BOTS.has(nick)) return true;
-  // Also catch anything matching common bot name patterns
-  if (/bot$/i.test(nick))    return true;  // ends in "bot"
-  if (/^bot/i.test(nick))    return true;  // starts with "bot"
-  if (/_bot_?$/i.test(nick)) return true;  // ends in "_bot"
-  return false;
-}
-
 function handleUserJoin(nick) {
   if (!wildUserEnabled) return;
   if (/^justinfan/i.test(nick)) return;  // filter anonymous viewers
-  if (isKnownBot(nick)) return;          // filter known bots
   if (wildUserSeen.has(nick)) return;    // already seen this session
 
   wildUserSeen.add(nick);
@@ -710,7 +727,7 @@ function parseLine(line, socket) {
 
   // !wilduser toggle — open to everyone in chat
   if (WILDUSER_ON_RE.test(msg)) {
-    wildUserEnabled = true;
+    wildUserEnabled = false;
     wildUserSeen = new Set(); // reset seen list on toggle
     return;
   }
