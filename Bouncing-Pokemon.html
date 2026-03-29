@@ -6,6 +6,70 @@
   @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { background: transparent !important; width: 100%; height: 100%; overflow: hidden; }
+
+  /* ── Setup screen ─────────────────────────────────────────── */
+  #setup-screen {
+    position: fixed; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    background: #0a0a0f;
+    font-family: 'Press Start 2P', monospace;
+    z-index: 100;
+  }
+  #setup-screen.hidden { display: none; }
+  .setup-card {
+    background: #13131a;
+    border: 1px solid #2a2a3a;
+    border-radius: 12px;
+    padding: 32px 28px;
+    width: 100%;
+    max-width: 480px;
+  }
+  .setup-label {
+    font-size: 7px;
+    color: #64748b;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-bottom: 12px;
+  }
+  .setup-input-row {
+    display: flex;
+    gap: 10px;
+    align-items: stretch;
+  }
+  .setup-input-wrap {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    background: #1c1c26;
+    border: 1px solid #2a2a3a;
+    border-radius: 8px;
+    padding: 0 14px;
+    transition: border-color 0.2s;
+  }
+  .setup-input-wrap:focus-within { border-color: #a855f7; }
+  .setup-input-wrap span { color: #64748b; font-size: 13px; margin-right: 4px; user-select: none; }
+  .setup-input-wrap input {
+    flex: 1; background: transparent; border: none; outline: none;
+    color: #e2e8f0; font-family: 'Press Start 2P', monospace;
+    font-size: 11px; padding: 14px 0;
+  }
+  .setup-input-wrap input::placeholder { color: #64748b; }
+  .setup-btn {
+    background: #7c3aed; color: white; border: none;
+    border-radius: 8px; padding: 14px 20px;
+    font-family: 'Press Start 2P', monospace; font-size: 7px;
+    letter-spacing: 1px; cursor: pointer; transition: background 0.15s;
+    white-space: nowrap;
+  }
+  .setup-btn:hover { background: #a855f7; }
+  .setup-hint {
+    font-size: 9px; color: #64748b; margin-top: 12px; line-height: 1.8;
+  }
+  .setup-error {
+    font-size: 8px; color: #ef4444; margin-top: 10px; display: none;
+  }
+
+  /* ── Overlay ──────────────────────────────────────────────── */
   #overlay {
     position: relative; width: 100%; height: 100vh;
     background: transparent; overflow: hidden;
@@ -45,6 +109,24 @@
 </style>
 </head>
 <body>
+
+<!-- ── Setup screen ───────────────────────────────────────────── -->
+<div id="setup-screen">
+  <div class="setup-card">
+    <div class="setup-label">Your Twitch Channel</div>
+    <div class="setup-input-row">
+      <div class="setup-input-wrap">
+        <span>#</span>
+        <input id="channel-input" type="text" placeholder="channelname" autocomplete="off" spellcheck="false">
+      </div>
+      <button class="setup-btn" onclick="startOverlay()">START</button>
+    </div>
+    <div class="setup-hint">Your channel name is saved automatically — you won't need to enter it again.</div>
+    <div class="setup-error" id="setup-error">Please enter a channel name.</div>
+  </div>
+</div>
+
+<!-- ── Overlay ────────────────────────────────────────────────── -->
 <div id="overlay">
   <div id="banner">
     <div class="banner-box">
@@ -66,10 +148,17 @@
 
 <script>
 // ============================================================
-//  CHANNELS TO MONITOR (lowercase, no # needed)
+//  CHANNELS TO MONITOR FOR SPAWNS (always watched, no setup needed)
+//  The streamer's own channel is added dynamically from the setup screen.
 // ============================================================
-var CHANNELS = ['whaonelly', 'recommendedpokeball'];
+var STATIC_CHANNELS = ['whaonelly', 'recommendedpokeball'];
+
 // ============================================================
+//  WILDUSER AUTHORIZED CHANNELS
+//  Only users whose channel name matches one of these (or the
+//  streamer's own channel) can use !wilduser on / !wilduseroff.
+// ============================================================
+var WILDUSER_AUTH = ['whaonelly', 'recommendedpokeball'];
 
 var SPRITE_GIF_SOURCES = [
   'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/showdown/',
@@ -245,12 +334,8 @@ var POKEMON_IDS = {
   frigibax:996,arctibax:997,baxcalibur:998,gimmighoul:999,gholdengo:1000,
   koraidon:1007,miraidon:1008,dipplin:1011,poltchageist:1012,sinistcha:1013,
   ogerpon:1017,archaludon:1018,hydrapple:1019,terapagos:1024,pecharunt:1025,
-  // Previously missing entries
   nidorina:30,nidoqueen:31,nidorino:33,nidoking:34,
-  unown:201,
-  runerigus:867,
-  basculegion:902,
-  enamorus:905,
+  unown:201,runerigus:867,basculegion:902,enamorus:905,
   okidogi:1014,munkidori:1015,fezandipiti:1016
 };
 
@@ -270,27 +355,66 @@ var ALIASES = {
   "gouging fire":1020,"raging bolt":1021,"iron boulder":1022,"iron crown":1023
 };
 
-// Spawn regex — captures name including optional parenthetical form
-var SPAWN_RE   = /A wild ([\w .':'\u2019\u2018\u266a\u2640\u2642-]+?(?:\s*\([^)]+\))?)\s*appears\b/iu;
-// !bouncy command regex
-var BOUNCY_RE  = /^!bouncy\s+(.+?)\s*(\d+)?\s*$/i;
-// !wilduser toggle regexes
+// Spawn regex
+var SPAWN_RE        = /A wild ([\w .':'\u2019\u2018\u266a\u2640\u2642-]+?(?:\s*\([^)]+\))?)\s*appears\b/iu;
+var BOUNCY_RE       = /^!bouncy\s+(.+?)\s*(\d+)?\s*$/i;
 var WILDUSER_ON_RE  = /^!wilduser\s+on$/i;
 var WILDUSER_OFF_RE = /^!wilduseroff$/i;
-
-// Spawn dedup — prevents the same spawn firing multiple times across monitored channels
-// 10 second window: tight enough to collapse simultaneous multi-channel spawns,
-// loose enough to never affect !bouncy or normal usage
-var spawnCooldowns   = {};       // pokemonKey -> timestamp
-var SPAWN_COOLDOWN_MS = 10000;   // 10 seconds
-
-// Sprite count for pokemon spawns and !bouncy (changed via !bouncysprites N)
-var pokeSpritesCount = 10;
+var CLEARCHANNEL_RE = /^!clearchannel$/i;
 var BOUNCYSPRITES_RE = /^!bouncysprites\s+(\d+)$/i;
 
+// Spawn dedup — 10 second window collapses simultaneous multi-channel spawns
+var spawnCooldowns    = {};
+var SPAWN_COOLDOWN_MS = 10000;
+
+// Sprite count for pokemon spawns and !bouncy
+var pokeSpritesCount = 10;
+
 // Wild user join banner state
-var wildUserEnabled = true;   // on by default
-var wildUserSeen    = new Set(); // usernames seen this OBS session — cleared on page load or toggle
+var wildUserEnabled = false;
+var wildUserSeen    = new Set();
+
+// Streamer channel — set at startup from setup screen
+var streamerChannel = '';
+
+// ─── Setup screen ─────────────────────────────────────────────────────────────
+var STORAGE_KEY = 'bouncypoke_channel';
+
+function startOverlay() {
+  var input = document.getElementById('channel-input').value.trim().replace(/^#/, '').toLowerCase();
+  if (!input) {
+    document.getElementById('setup-error').style.display = 'block';
+    return;
+  }
+  localStorage.setItem(STORAGE_KEY, input);
+  launchOverlay(input);
+}
+
+function launchOverlay(channel) {
+  streamerChannel = channel;
+  document.getElementById('setup-screen').classList.add('hidden');
+
+  // Build full channel list: static channels + streamer's own channel (deduped)
+  var allChannels = STATIC_CHANNELS.slice();
+  if (allChannels.indexOf(channel) === -1) allChannels.push(channel);
+
+  // Streamer's channel is also authorized for !wilduser
+  if (WILDUSER_AUTH.indexOf(channel) === -1) WILDUSER_AUTH.push(channel);
+
+  allChannels.forEach(function(ch) { connectChannel(ch); });
+}
+
+window.addEventListener('load', function() {
+  var saved = localStorage.getItem(STORAGE_KEY);
+  if (saved) {
+    launchOverlay(saved);
+  } else {
+    // Show setup screen — handle Enter key
+    document.getElementById('channel-input').addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') startOverlay();
+    });
+  }
+});
 
 // ─── Name normalisation ───────────────────────────────────────────────────────
 function toSlug(s) {
@@ -314,7 +438,7 @@ function parseSpawnName(raw) {
   return { cleanName: cleanName, baseKey: baseKey, formKey: formKey, formHint: formHint };
 }
 
-// ─── Step 1: Local map lookup ─────────────────────────────────────────────────
+// ─── Local map lookup ─────────────────────────────────────────────────────────
 function localLookup(baseKey, formKey) {
   function stripped(k) { return k.replace(/[^a-z0-9]/g, ''); }
   var keys = formKey ? [formKey, baseKey] : [baseKey];
@@ -329,8 +453,7 @@ function localLookup(baseKey, formKey) {
   return null;
 }
 
-// ─── Step 2: PokeAPI direct fetch — tries multiple slug variations ─────────────
-// Returns a numeric pokemon ID or null
+// ─── PokeAPI direct fetch ─────────────────────────────────────────────────────
 function pokeAPIDirectFetch(slug) {
   return fetch(POKEAPI + 'pokemon/' + encodeURIComponent(slug) + '/')
     .then(function(r) { if (!r.ok) throw new Error('not found'); return r.json(); })
@@ -338,15 +461,12 @@ function pokeAPIDirectFetch(slug) {
     .catch(function() { return null; });
 }
 
-// ─── Step 3: PokeAPI species lookup — fetch all varieties and try each ─────────
-// e.g. "maushold" → species has varieties: "maushold-family-of-three", "maushold-family-of-four"
-// Returns first variety ID that has a sprite, or null
+// ─── PokeAPI species varieties ────────────────────────────────────────────────
 function pokeAPISpeciesVarieties(baseKey) {
   return fetch(POKEAPI + 'pokemon-species/' + encodeURIComponent(baseKey) + '/')
     .then(function(r) { if (!r.ok) throw new Error('not found'); return r.json(); })
     .then(function(species) {
       var varieties = species.varieties || [];
-      // Try each variety in order (default variety first)
       varieties.sort(function(a, b) { return b.is_default ? 1 : -1; });
       var idx = 0;
       function tryVariety() {
@@ -362,96 +482,65 @@ function pokeAPISpeciesVarieties(baseKey) {
     .catch(function() { return null; });
 }
 
-// ─── Step 4: Check if a sprite URL actually resolves (HEAD request) ────────────
-function spriteExists(url) {
-  return fetch(url, { method: 'HEAD' })
-    .then(function(r) { return r.ok; })
-    .catch(function() { return false; });
-}
-
-// ─── Step 4 (deep only): Levenshtein fuzzy match ──────────────────────────────
-// Runs after all other lookups fail. Checks the input against every key in
-// POKEMON_IDS and ALIASES and returns the closest match if within MAX_DISTANCE edits.
-// Only used for !bouncy — never for PCG spawns.
-var FUZZY_MAX_DISTANCE = 3; // max typo distance to accept
-
+// ─── Levenshtein fuzzy match (deep/!bouncy only) ──────────────────────────────
+var FUZZY_MAX_DISTANCE = 3;
 function levenshtein(a, b) {
   var m = a.length, n = b.length;
-  // Quick exits
-  if (m === 0) return n;
-  if (n === 0) return m;
+  if (m === 0) return n; if (n === 0) return m;
   if (Math.abs(m - n) > FUZZY_MAX_DISTANCE) return FUZZY_MAX_DISTANCE + 1;
   var prev = [], curr = [];
   for (var j = 0; j <= n; j++) prev[j] = j;
   for (var i = 1; i <= m; i++) {
     curr[0] = i;
     for (var j2 = 1; j2 <= n; j2++) {
-      curr[j2] = a[i-1] === b[j2-1]
-        ? prev[j2-1]
-        : 1 + Math.min(prev[j2-1], prev[j2], curr[j2-1]);
+      curr[j2] = a[i-1] === b[j2-1] ? prev[j2-1] : 1 + Math.min(prev[j2-1], prev[j2], curr[j2-1]);
     }
     var tmp = prev; prev = curr; curr = tmp;
   }
   return prev[n];
 }
-
 function fuzzyLocalLookup(baseKey) {
   var best = null, bestDist = FUZZY_MAX_DISTANCE + 1;
-
-  function check(key, id) {
-    var d = levenshtein(baseKey, key);
-    if (d < bestDist) { bestDist = d; best = id; }
-  }
-
+  function check(key, id) { var d = levenshtein(baseKey, key); if (d < bestDist) { bestDist = d; best = id; } }
   for (var pk in POKEMON_IDS) check(pk, POKEMON_IDS[pk]);
   for (var ak in ALIASES)     check(ak, ALIASES[ak]);
-
   return bestDist <= FUZZY_MAX_DISTANCE ? best : null;
 }
 
 // ─── Master lookup chain ──────────────────────────────────────────────────────
-// For PCG spawns: fast path only (local + direct PokeAPI)
-// For !bouncy: full deep search including species varieties + fuzzy fallback
 function resolveSprite(parsed, deep) {
-  // Step 1: local map
   var localId = localLookup(parsed.baseKey, parsed.formKey);
   if (localId) return Promise.resolve(localId);
 
-  // Build all slug variations to attempt, in priority order
   var root         = parsed.baseKey.split('-')[0];
   var spaceKey     = parsed.baseKey.replace(/-/g, ' ');
   var noSepKey     = parsed.baseKey.replace(/-/g, '');
   var altSlug      = parsed.baseKey.replace(/[^a-z0-9-]/g, '');
 
   var slugs = [];
-  if (parsed.formKey) slugs.push(parsed.formKey);                                                               // 1. form+hyphen   e.g. maushold-family-of-four
-  slugs.push(parsed.baseKey);                                                                                    // 2. hyphen base   e.g. great-tusk
-  if (spaceKey  !== parsed.baseKey) slugs.push(spaceKey);                                                      // 3. space base    e.g. great tusk
-  if (noSepKey  !== parsed.baseKey && slugs.indexOf(noSepKey)  === -1) slugs.push(noSepKey);                  // 4. no separator  e.g. greattusk
-  if (altSlug   !== parsed.baseKey && slugs.indexOf(altSlug)   === -1) slugs.push(altSlug);                   // 5. punct-stripped
+  if (parsed.formKey) slugs.push(parsed.formKey);
+  slugs.push(parsed.baseKey);
+  if (spaceKey  !== parsed.baseKey) slugs.push(spaceKey);
+  if (noSepKey  !== parsed.baseKey && slugs.indexOf(noSepKey)  === -1) slugs.push(noSepKey);
+  if (altSlug   !== parsed.baseKey && slugs.indexOf(altSlug)   === -1) slugs.push(altSlug);
   if (parsed.formKey && parsed.formHint) {
     var formSpaceKey    = parsed.baseKey + ' ' + parsed.formHint.toLowerCase();
     var formAllSpaceKey = parsed.formKey.replace(/-/g, ' ');
-    if (slugs.indexOf(formSpaceKey)    === -1) slugs.push(formSpaceKey);                                       // 6. space base + space form
-    if (slugs.indexOf(formAllSpaceKey) === -1) slugs.push(formAllSpaceKey);                                    // 7. all spaces variant
+    if (slugs.indexOf(formSpaceKey)    === -1) slugs.push(formSpaceKey);
+    if (slugs.indexOf(formAllSpaceKey) === -1) slugs.push(formAllSpaceKey);
   }
-  if (root !== parsed.baseKey && slugs.indexOf(root) === -1) slugs.push(root);                                // 8. root word only e.g. maushold
+  if (root !== parsed.baseKey && slugs.indexOf(root) === -1) slugs.push(root);
 
-  // Step 2: try each slug directly against PokeAPI
   var idx = 0;
   function tryDirect() {
     if (idx >= slugs.length) return Promise.resolve(null);
-    return pokeAPIDirectFetch(slugs[idx++]).then(function(id) {
-      return id !== null ? id : tryDirect();
-    });
+    return pokeAPIDirectFetch(slugs[idx++]).then(function(id) { return id !== null ? id : tryDirect(); });
   }
 
   return tryDirect().then(function(id) {
     if (id !== null) return id;
     if (!deep) return null;
 
-    // Step 3 (deep/!bouncy only): species varieties
-    // Try species lookup on base key, space variant, and root
     var speciesCandidates = [parsed.baseKey];
     if (spaceKey !== parsed.baseKey) speciesCandidates.push(spaceKey);
     if (root !== parsed.baseKey) speciesCandidates.push(root);
@@ -459,36 +548,25 @@ function resolveSprite(parsed, deep) {
     var si = 0;
     function trySpecies() {
       if (si >= speciesCandidates.length) return Promise.resolve(null);
-      return pokeAPISpeciesVarieties(speciesCandidates[si++]).then(function(id) {
-        return id !== null ? id : trySpecies();
-      });
+      return pokeAPISpeciesVarieties(speciesCandidates[si++]).then(function(id) { return id !== null ? id : trySpecies(); });
     }
     return trySpecies().then(function(id) {
       if (id !== null) return id;
-
-      // Step 4 (deep/!bouncy only): Levenshtein fuzzy match against local map
-      // e.g. "zapados" → "zapdos", "charzard" → "charizard"
       var fuzzyId = fuzzyLocalLookup(parsed.baseKey);
       if (fuzzyId !== null) return fuzzyId;
-
-      // Also try fuzzy on root word if it differs (e.g. "mausholde" → "maushold")
       if (root !== parsed.baseKey) {
         var fuzzyRootId = fuzzyLocalLookup(root);
         if (fuzzyRootId !== null) return fuzzyRootId;
       }
-
       return null;
     });
   });
 }
 
-// ─── Spawn from PCG chat (fast path) ─────────────────────────────────────────
-// ─── Banner queue ────────────────────────────────────────────────────────────
-// All banner events (spawns, !bouncy, user joins) go through this queue so they
-// never overlap — each one waits for the previous banner to finish before showing.
-var bannerQueue   = [];   // array of { name, durationMs, onShow } objects
-var bannerBusy    = false;
-var bannerTimer   = null;
+// ─── Banner queue ─────────────────────────────────────────────────────────────
+var bannerQueue = [];
+var bannerBusy  = false;
+var bannerTimer = null;
 
 function queueBanner(name, durationMs, onShow) {
   bannerQueue.push({ name: name, durationMs: durationMs || 10000, onShow: onShow || null });
@@ -504,41 +582,39 @@ function processQueue() {
 
 function handleSpawn(raw) {
   var parsed = parseSpawnName(raw);
-  var key    = parsed.baseKey;
-  var now    = Date.now();
-
-  // Dedup: if this exact Pokémon already triggered within the cooldown window, skip
+  var key = parsed.baseKey, now = Date.now();
   if (spawnCooldowns[key] && (now - spawnCooldowns[key]) < SPAWN_COOLDOWN_MS) return;
   spawnCooldowns[key] = now;
-
   queueBanner(parsed.cleanName, 10000, function() {
-    resolveSprite(parsed, false).then(function(id) {
-      if (id) spawnSprites(id);
-    });
+    resolveSprite(parsed, false).then(function(id) { if (id) spawnSprites(id); });
   });
 }
 
-// ─── !bouncy command (deep path) ─────────────────────────────────────────────
-// sourceIndex: null = normal auto logic, 1-3 = force that GIF source, 4 = force static PNG
 function handleBouncy(raw, sourceIndex) {
   var parsed = parseSpawnName(raw);
   queueBanner(parsed.cleanName, 10000, function() {
-    resolveSprite(parsed, true).then(function(id) {
-      if (id) spawnSprites(id, sourceIndex);
-    });
+    resolveSprite(parsed, true).then(function(id) { if (id) spawnSprites(id, sourceIndex); });
   });
 }
 
-// ─── Wild user join banner ───────────────────────────────────────────────────
+// Known bot accounts that should never trigger the wilduser banner
+var KNOWN_BOTS = new Set([
+  'pokemoncommunitygame','nightbot','streamelements','streamlabs',
+  'moobot','wizebot','coebot','xanbot','ohbot','fossabot',
+  'buttsbot','sery_bot','soundalerts','kofistreambot',
+  'recommendedpokeball','robyul','logviewer','commanderroot',
+  'anotherttvviewer','twitchstreambot','stay_hydrated_bot',
+  'restreambot','elbierro_bot','botrixoficial','deusexmachina999',
+  'apricotdrupefruit','titlechange_bot','skinnyseahorse'
+]);
+
 function handleUserJoin(nick) {
   if (!wildUserEnabled) return;
-  if (/^justinfan/i.test(nick)) return;  // filter anonymous viewers
-  if (wildUserSeen.has(nick)) return;    // already seen this session
-
+  if (/^justinfan/i.test(nick)) return;  // anonymous viewers
+  if (KNOWN_BOTS.has(nick)) return;      // known bot accounts
+  if (wildUserSeen.has(nick)) return;
   wildUserSeen.add(nick);
-  queueBanner(nick, 10000, function() {
-    spawnPokeballs();
-  });
+  queueBanner(nick, 10000, function() { spawnPokeballs(); });
 }
 
 // ─── UI ───────────────────────────────────────────────────────────────────────
@@ -554,32 +630,24 @@ function showBannerNow(name, durationMs, onShow) {
   clearTimeout(bannerTimer);
   bannerTimer = setTimeout(function() {
     banner.classList.remove('show');
-    // Small gap between banners so they don't feel instant
     setTimeout(processQueue, 500);
   }, durationMs);
 }
 
-// Resolves to a working sprite URL.
-// forcedSource: null = auto (try all GIF sources in order until one works, then PNG).
-// 1-3 = use exactly that GIF source, no fallback — for testing.
-// 4   = use static PNG directly — for testing.
+// ─── Sprite resolution ────────────────────────────────────────────────────────
 function resolveGifUrl(id, forcedSource) {
   var pngUrl = SPRITE_PNG + id + '.png';
-
-  // Explicit source requested — use it directly, no fallback
   if (forcedSource === 4) return Promise.resolve(pngUrl);
   if (forcedSource >= 1 && forcedSource <= 3) {
     return Promise.resolve(SPRITE_GIF_SOURCES[forcedSource - 1] + id + '.gif');
   }
-
-  // Auto mode — try each GIF source in order, fall back to PNG
   var si = 0;
   function tryNext() {
     if (si >= SPRITE_GIF_SOURCES.length) return Promise.resolve(pngUrl);
     var url = SPRITE_GIF_SOURCES[si++] + id + '.gif';
     return fetch(url, { method: 'HEAD' })
       .then(function(r) { return r.ok ? url : tryNext(); })
-      .catch(function()  { return tryNext(); });
+      .catch(function() { return tryNext(); });
   }
   return tryNext();
 }
@@ -587,30 +655,20 @@ function resolveGifUrl(id, forcedSource) {
 function spawnSprites(id, sourceIndex) {
   var W = overlay.offsetWidth, H = overlay.offsetHeight;
   var forcedSource = (sourceIndex !== undefined && sourceIndex !== null) ? sourceIndex : null;
-
   resolveGifUrl(id, forcedSource).then(function(spriteUrl) {
-    var pngUrl = SPRITE_PNG + id + '.png'; // static fallback in case img.onerror fires
-
+    var pngUrl = SPRITE_PNG + id + '.png';
     for (var i = 0; i < pokeSpritesCount; i++) {
       (function() {
-        var img  = document.createElement('img');
+        var img = document.createElement('img');
         img.className = 'poke-sprite';
-        var size = 96;
-        var x    = Math.random() * (W - size);
-        var y    = Math.random() * (H - size - 40);
-        var spd  = 1.4 + Math.random() * 1.8;
-        var ang  = Math.random() * Math.PI * 2;
-        var vx   = Math.cos(ang) * spd, vy = Math.sin(ang) * spd;
-        var sc   = 0.8 + Math.random() * 0.5;
-
+        var size = 96, x = Math.random() * (W - size), y = Math.random() * (H - size - 40);
+        var spd = 1.4 + Math.random() * 1.8, ang = Math.random() * Math.PI * 2;
+        var vx = Math.cos(ang) * spd, vy = Math.sin(ang) * spd, sc = 0.8 + Math.random() * 0.5;
         img.style.cssText = 'left:'+x+'px;top:'+y+'px;transform:scale('+sc+');opacity:0;';
         overlay.appendChild(img);
-
-        // Last-resort PNG fallback if the resolved URL still somehow fails to load
         img.onerror = function() { img.onerror = null; img.src = pngUrl; };
         img.src = spriteUrl;
         setTimeout(function() { img.style.opacity = '1'; }, 50);
-
         var aid;
         function step() {
           x += vx; y += vy;
@@ -619,16 +677,13 @@ function spawnSprites(id, sourceIndex) {
           if (x >= maxX) { x = maxX; vx = -Math.abs(vx); }
           if (y <= 0)    { y = 0;    vy =  Math.abs(vy); }
           if (y >= maxY) { y = maxY; vy = -Math.abs(vy); }
-          img.style.left = x + 'px';
-          img.style.top  = y + 'px';
+          img.style.left = x+'px'; img.style.top = y+'px';
           aid = requestAnimationFrame(step);
         }
         aid = requestAnimationFrame(step);
-
         setTimeout(function() {
           cancelAnimationFrame(aid);
-          img.style.transition = 'opacity 0.5s';
-          img.style.opacity = '0';
+          img.style.transition = 'opacity 0.5s'; img.style.opacity = '0';
           setTimeout(function() { if (img.parentNode) img.parentNode.removeChild(img); }, 500);
         }, 10000);
       })();
@@ -636,8 +691,7 @@ function spawnSprites(id, sourceIndex) {
   });
 }
 
-// ─── Pokéball sprites for user join ──────────────────────────────────────────
-// Inline SVG Pokéball rendered as a data URI — no external dependency
+// ─── Pokéball sprites ─────────────────────────────────────────────────────────
 var POKEBALL_SVG = 'data:image/svg+xml,' + encodeURIComponent([
   '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">',
   '<circle cx="50" cy="50" r="48" fill="#fff" stroke="#222" stroke-width="3"/>',
@@ -650,67 +704,55 @@ var POKEBALL_SVG = 'data:image/svg+xml,' + encodeURIComponent([
 
 function spawnPokeballs() {
   var W = overlay.offsetWidth, H = overlay.offsetHeight;
-  var duration = 10000;
-
   for (var i = 0; i < 10; i++) {
     (function() {
-      var img  = document.createElement('img');
+      var img = document.createElement('img');
       img.className = 'poke-sprite';
-      var size = 80;
-      var x    = Math.random() * (W - size);
-      var y    = Math.random() * (H - size - 40);
-      var spd  = 1.2 + Math.random() * 2.2;
-      var ang  = Math.random() * Math.PI * 2;
-      var vx   = Math.cos(ang) * spd, vy = Math.sin(ang) * spd;
-      var sc   = 0.7 + Math.random() * 0.7;
-      var rot  = 0;
-      var rspd = (Math.random() - 0.5) * 4; // spin speed
-
+      var size = 80, x = Math.random() * (W - size), y = Math.random() * (H - size - 40);
+      var spd = 1.2 + Math.random() * 2.2, ang = Math.random() * Math.PI * 2;
+      var vx = Math.cos(ang) * spd, vy = Math.sin(ang) * spd, sc = 0.7 + Math.random() * 0.7;
+      var rot = 0, rspd = (Math.random() - 0.5) * 4;
       img.src = POKEBALL_SVG;
       img.style.cssText = 'left:'+x+'px;top:'+y+'px;opacity:0;width:'+size+'px;height:'+size+'px;position:absolute;pointer-events:none;';
       overlay.appendChild(img);
       setTimeout(function() { img.style.opacity = '1'; }, 50);
-
       var aid;
       function step() {
-        x += vx; y += vy;
-        rot += rspd;
+        x += vx; y += vy; rot += rspd;
         var maxX = W - size * sc, maxY = H - size * sc - 40;
         if (x <= 0)    { x = 0;    vx =  Math.abs(vx); }
         if (x >= maxX) { x = maxX; vx = -Math.abs(vx); }
         if (y <= 0)    { y = 0;    vy =  Math.abs(vy); }
         if (y >= maxY) { y = maxY; vy = -Math.abs(vy); }
-        img.style.left      = x + 'px';
-        img.style.top       = y + 'px';
+        img.style.left = x+'px'; img.style.top = y+'px';
         img.style.transform = 'scale('+sc+') rotate('+rot+'deg)';
         aid = requestAnimationFrame(step);
       }
       aid = requestAnimationFrame(step);
-
       setTimeout(function() {
         cancelAnimationFrame(aid);
-        img.style.transition = 'opacity 0.5s';
-        img.style.opacity = '0';
+        img.style.transition = 'opacity 0.5s'; img.style.opacity = '0';
         setTimeout(function() { if (img.parentNode) img.parentNode.removeChild(img); }, 500);
-      }, duration);
+      }, 10000);
     })();
   }
 }
 
+// ─── Error display ────────────────────────────────────────────────────────────
 function showError(msg) {
   var log = document.getElementById('error-log');
-  var el  = document.createElement('div');
-  el.className   = 'err-msg';
-  el.textContent = msg;
+  var el = document.createElement('div');
+  el.className = 'err-msg'; el.textContent = msg;
   log.appendChild(el);
   setTimeout(function() { if (el.parentNode) el.parentNode.removeChild(el); }, 5500);
 }
 
 // ─── Twitch IRC (multi-channel) ───────────────────────────────────────────────
-var connections = {}; // keyed by channel name
+var connections = {};
 
-// Lowercase bot nick for join filtering
-var BOT_NICK_LOWER = ''; // this script uses anonymous justinfan connections — no real bot nick to filter
+function isWildUserAuthorized(nick) {
+  return WILDUSER_AUTH.indexOf(nick) !== -1;
+}
 
 function parseLine(line, socket) {
   if (!line) return;
@@ -719,25 +761,32 @@ function parseLine(line, socket) {
   var m = line.match(/:([^!]+)![^ ]+ PRIVMSG #[^ ]+ :(.+)/);
   if (!m) return;
 
-  // First-message detection — fires banner on first chat message this session
-  handleUserJoin(m[1].toLowerCase());
   var nick = m[1].toLowerCase();
   var msg  = m[2].trim();
   if (msg.charCodeAt(0) === 1) msg = msg.slice(8).replace(/\x01$/, '').trim();
 
-  // !wilduser toggle — open to everyone in chat
+  // First-message detection
+  handleUserJoin(nick);
+
+  // !wilduser — restricted to authorized channels only
   if (WILDUSER_ON_RE.test(msg)) {
-    wildUserEnabled = false;
-    wildUserSeen = new Set(); // reset seen list on toggle
+    if (isWildUserAuthorized(nick)) { wildUserEnabled = true; wildUserSeen = new Set(); }
     return;
   }
   if (WILDUSER_OFF_RE.test(msg)) {
-    wildUserEnabled = false;
-    wildUserSeen = new Set(); // reset seen list on toggle
+    if (isWildUserAuthorized(nick)) { wildUserEnabled = false; wildUserSeen = new Set(); }
     return;
   }
 
-  // !bouncysprites command — sets sprite count for pokemon spawns and !bouncy
+  // !clearchannel — restricted to streamer's own channel only
+  if (CLEARCHANNEL_RE.test(msg)) {
+    if (nick === streamerChannel) {
+      localStorage.removeItem(STORAGE_KEY);
+    }
+    return;
+  }
+
+  // !bouncysprites — open to everyone
   var bsMatch = msg.match(BOUNCYSPRITES_RE);
   if (bsMatch) {
     var n = parseInt(bsMatch[1]);
@@ -745,7 +794,7 @@ function parseLine(line, socket) {
     return;
   }
 
-  // !bouncy command — open to everyone in chat
+  // !bouncy — open to everyone
   var bouncy = msg.match(BOUNCY_RE);
   if (bouncy) { handleBouncy(bouncy[1].trim(), bouncy[2] ? parseInt(bouncy[2]) : null); return; }
 
@@ -758,7 +807,6 @@ function parseLine(line, socket) {
 function connectChannel(channel) {
   var state = connections[channel] || { attempts: 0, ws: null, pingTimer: null, reconnTimer: null };
   connections[channel] = state;
-
   if (state.ws) { state.ws.onclose = null; state.ws.close(); }
   clearTimeout(state.reconnTimer);
   clearInterval(state.pingTimer);
@@ -769,7 +817,6 @@ function connectChannel(channel) {
   state.ws = ws;
 
   var nick = 'justinfan' + Math.floor(Math.random() * 99999);
-
   ws.onopen = function() {
     ws.send('PASS SCHMOOPIIE');
     ws.send('NICK ' + nick);
@@ -779,14 +826,9 @@ function connectChannel(channel) {
     }, 240000);
     state.attempts = 0;
   };
-
-  ws.onmessage = function(e) {
-    e.data.split('\r\n').forEach(function(line) { parseLine(line, ws); });
-  };
-
-  ws.onerror = function() { showError('ERROR: WebSocket failed for #' + channel); };
-
-  ws.onclose = function() {
+  ws.onmessage = function(e) { e.data.split('\r\n').forEach(function(line) { parseLine(line, ws); }); };
+  ws.onerror   = function() { showError('ERROR: WebSocket failed for #' + channel); };
+  ws.onclose   = function() {
     clearInterval(state.pingTimer);
     state.attempts++;
     var delay = Math.min(state.attempts * 3000, 30000);
@@ -798,9 +840,6 @@ function connectChannel(channel) {
     }
   };
 }
-
-// Connect to all channels
-CHANNELS.forEach(function(ch) { connectChannel(ch); });
 </script>
 </body>
 </html>
