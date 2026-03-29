@@ -67,12 +67,31 @@ Sets how many Pokémon sprites spawn per animation. Applies to automatic spawns 
 ```
 > Min: 1 — Max: 100
 
+### `!bouncyvolume <number>`
+Sets the volume of the Pokémon cry audio that plays when a Pokémon appears. Saved automatically — persists across OBS reloads. Open to everyone.
+```
+!bouncyvolume 0    → muted
+!bouncyvolume 50   → 50% (default)
+!bouncyvolume 100  → max
+```
+> Min: 0 — Max: 100
+
+> **OBS note:** For the cry audio to play on stream, right-click the browser source in OBS → Properties → check **"Control audio via OBS"**. The browser source will then appear in your audio mixer.
+
 ### `!wilduser on` / `!wilduseroff`
 Toggles the first-time chatter banner. When enabled, the first time a viewer sends a message this session, a *"A wild [Username] appeared!"* banner shows with bouncing Pokéballs. Toggling either way resets the seen-users list.
 
 > Restricted to channels listed in `WILDUSER_AUTH` plus the streamer's own channel.
 
 > Detection is based on **first message sent**, not channel join — this is a Twitch limitation. Silent lurkers will not trigger a banner.
+
+---
+
+## Pokémon Cries
+
+When a Pokémon appears (via PCG spawn or `!bouncy`), its cry plays in sync with the banner. Cries are sourced from Pokémon Showdown and cover all Pokémon Gen 1–9 including special characters (Nidoran♀/♂, Mr. Mime, Farfetch'd, etc.).
+
+Volume defaults to 50% and can be changed with `!bouncyvolume`. The setting persists across reloads.
 
 ---
 
