@@ -9,12 +9,6 @@ A browser source overlay for OBS. Displays bouncing Pokémon sprites when Pokém
 1. Add `Bouncing-Pokemon.html` as a **Browser Source** in OBS.
 2. When it loads for the first time, a setup screen will appear asking for your Twitch channel name.
 3. Enter your channel name and click **START**. The channel is saved automatically — OBS will connect to it on every future launch without showing the setup screen again.
-4. Open the file and update the monitored channels and wilduser-authorized users if needed:
-   ```js
-   var STATIC_CHANNELS = ['whaonelly', 'recommendedpokeball'];
-   var WILDUSER_AUTH   = ['whaonelly', 'recommendedpokeball'];
-   ```
-   Your own channel (entered at setup) is added to both lists automatically.
 
 ---
 
