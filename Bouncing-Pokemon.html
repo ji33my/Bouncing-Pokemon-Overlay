@@ -371,14 +371,15 @@ var SPAWN_COOLDOWN_MS = 10000;
 var pokeSpritesCount = 10;
 
 // Wild user join banner state
-var wildUserEnabled = false;
+var wildUserEnabled = localStorage.getItem('bouncypoke_wilduser') === 'true';
 var wildUserSeen    = new Set();
 
 // Streamer channel — set at startup from setup screen
 var streamerChannel = '';
 
 // ─── Setup screen ─────────────────────────────────────────────────────────────
-var STORAGE_KEY = 'bouncypoke_channel';
+var STORAGE_KEY        = 'bouncypoke_channel';
+var WILDUSER_STORAGE_KEY = 'bouncypoke_wilduser';
 
 function startOverlay() {
   var input = document.getElementById('channel-input').value.trim().replace(/^#/, '').toLowerCase();
@@ -770,11 +771,11 @@ function parseLine(line, socket) {
 
   // !wilduser — restricted to authorized channels only
   if (WILDUSER_ON_RE.test(msg)) {
-    if (isWildUserAuthorized(nick)) { wildUserEnabled = true; wildUserSeen = new Set(); }
+    if (isWildUserAuthorized(nick)) { wildUserEnabled = true; localStorage.setItem(WILDUSER_STORAGE_KEY, 'true'); wildUserSeen = new Set(); }
     return;
   }
   if (WILDUSER_OFF_RE.test(msg)) {
-    if (isWildUserAuthorized(nick)) { wildUserEnabled = false; wildUserSeen = new Set(); }
+    if (isWildUserAuthorized(nick)) { wildUserEnabled = false; localStorage.setItem(WILDUSER_STORAGE_KEY, 'false'); wildUserSeen = new Set(); }
     return;
   }
 
