@@ -6,7 +6,7 @@ A browser source overlay for OBS. Displays bouncing Pokémon sprites when Pokém
 
 ## Setup
 
-1. Add `Bouncing-Pokemon.html` as a **Browser Source** in OBS.
+1. Add https://ji33my.github.io/Bouncing-Pokemon-Overlay/Bouncing-Pokemon.html as a **Browser Source** in OBS.
 2. When it loads for the first time, a setup screen will appear asking for your Twitch channel name.
 3. Enter your channel name and click **START**. The channel is saved automatically — OBS will connect to it on every future launch without showing the setup screen again.
 4. In the browser source properties, check **Control audio via OBS** so Pokémon cries are captured and sent to your stream audio.
