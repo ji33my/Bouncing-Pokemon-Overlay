@@ -419,9 +419,7 @@ function parseLine(line,socket){
   handleUserJoin(nick);
   if(WILDUSER_ON_RE.test(msg)){if(isWildUserAuthorized(nick)){wildUserEnabled=true;localStorage.setItem(WILDUSER_STORAGE_KEY,'true');wildUserSeen=new Set();}return;}
   if(WILDUSER_OFF_RE.test(msg)){if(isWildUserAuthorized(nick)){wildUserEnabled=false;localStorage.setItem(WILDUSER_STORAGE_KEY,'false');wildUserSeen=new Set();}return;}
-  // FIX 2: !clearchannel now calls clearChannel() which resets both localStorage
-  // and the live UI immediately so the setup screen appears on next OBS refresh.
-  if(CLEARCHANNEL_RE.test(msg)){if(nick===streamerChannel){clearChannel();}return;}
+  if(CLEARCHANNEL_RE.test(msg)){clearChannel();return;}
   var bsMatch=msg.match(BOUNCYSPRITES_RE);
   if(bsMatch){var n=parseInt(bsMatch[1]);if(n>0&&n<=100){pokeSpritesCount=n;}return;}
   if(BOUNCY_POKEBALL_RE.test(msg)){spawnPokeballs();return;}
