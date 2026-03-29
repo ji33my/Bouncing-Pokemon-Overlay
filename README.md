@@ -9,6 +9,7 @@ A browser source overlay for OBS. Displays bouncing Pokémon sprites when Pokém
 1. Add `Bouncing-Pokemon.html` as a **Browser Source** in OBS.
 2. When it loads for the first time, a setup screen will appear asking for your Twitch channel name.
 3. Enter your channel name and click **START**. The channel is saved automatically — OBS will connect to it on every future launch without showing the setup screen again.
+4. In the browser source properties, check **Control audio via OBS** so Pokémon cries are captured and sent to your stream audio.
 
 ---
 
@@ -21,27 +22,14 @@ Clears the saved channel from the browser source cache. Type this command **in y
 
 ---
 
-## Sprite Sources
-
-When a Pokémon is looked up, sprites are pulled in order. The first working GIF is used, falling back to a static PNG if all fail.
-
-| # | Source |
-|---|--------|
-| 1 | Showdown animated sprites (PokeAPI) |
-| 2 | Gen V Black/White animated sprites (PokeAPI) |
-| 3 | Project Pokémon |
-| 4 | Static PNG (PokeAPI) — fallback only |
-
----
-
 ## Commands
 
 ### `!bouncy <pokemon>`
 Manually triggers the bouncing sprite animation for any Pokémon. Open to everyone in chat.
 ```
 !bouncy Pikachu
-!bouncy Maushold (Family of Four)
-!bouncy Great Tusk
+!bouncy Charmander 
+!bouncy Squirtle
 ```
 
 ### `!bouncy <pokemon> <1-4>`
@@ -69,8 +57,6 @@ Sets the volume of the Pokémon cry audio that plays when a Pokémon appears. Sa
 !bouncyvolume 100  → max
 ```
 > Min: 0 — Max: 100
-
-> **OBS note:** For the cry audio to play on stream, right-click the browser source in OBS → Properties → check **"Control audio via OBS"**. The browser source will then appear in your audio mixer.
 
 ### `!wilduser on` / `!wilduseroff`
 Toggles the first-time chatter banner. When enabled, the first time a viewer sends a message this session, a *"A wild [Username] appeared!"* banner shows with bouncing Pokéballs. Toggling either way resets the seen-users list.
