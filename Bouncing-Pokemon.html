@@ -501,17 +501,26 @@ function levenshtein(a, b) {
   return prev[n];
 }
 function fuzzyLocalLookup(baseKey) {
-  var best = null, bestDist = FUZZY_MAX_DISTANCE + 1;
-  function check(key, id) { var d = levenshtein(baseKey, key); if (d < bestDist) { bestDist = d; best = id; } }
+  var best = null, bestDist = FUZZY_MAX_DISTANCE + 1, bestKey = null;
+  function check(key, id) {
+    var d = levenshtein(baseKey, key);
+    if (d < bestDist) { bestDist = d; best = id; bestKey = key; }
+  }
   for (var pk in POKEMON_IDS) check(pk, POKEMON_IDS[pk]);
   for (var ak in ALIASES)     check(ak, ALIASES[ak]);
-  return bestDist <= FUZZY_MAX_DISTANCE ? best : null;
+  return bestDist <= FUZZY_MAX_DISTANCE ? { id: best, key: bestKey } : null;
+}
+
+// Converts a local map key back to a display name
+// e.g. "great-tusk" → "Great Tusk", "mr. mime" → "Mr. Mime"
+function keyToDisplayName(key) {
+  return key.replace(/-/g, ' ').replace(/\w/g, function(c) { return c.toUpperCase(); });
 }
 
 // ─── Master lookup chain ──────────────────────────────────────────────────────
 function resolveSprite(parsed, deep) {
   var localId = localLookup(parsed.baseKey, parsed.formKey);
-  if (localId) return Promise.resolve(localId);
+  if (localId) return Promise.resolve({ id: localId, correctedName: null });
 
   var root         = parsed.baseKey.split('-')[0];
   var spaceKey     = parsed.baseKey.replace(/-/g, ' ');
@@ -535,11 +544,11 @@ function resolveSprite(parsed, deep) {
   var idx = 0;
   function tryDirect() {
     if (idx >= slugs.length) return Promise.resolve(null);
-    return pokeAPIDirectFetch(slugs[idx++]).then(function(id) { return id !== null ? id : tryDirect(); });
+    return pokeAPIDirectFetch(slugs[idx++]).then(function(id) { return id !== null ? { id: id, correctedName: null } : tryDirect(); });
   }
 
-  return tryDirect().then(function(id) {
-    if (id !== null) return id;
+  return tryDirect().then(function(result) {
+    if (result !== null) return result;
     if (!deep) return null;
 
     var speciesCandidates = [parsed.baseKey];
@@ -549,15 +558,15 @@ function resolveSprite(parsed, deep) {
     var si = 0;
     function trySpecies() {
       if (si >= speciesCandidates.length) return Promise.resolve(null);
-      return pokeAPISpeciesVarieties(speciesCandidates[si++]).then(function(id) { return id !== null ? id : trySpecies(); });
+      return pokeAPISpeciesVarieties(speciesCandidates[si++]).then(function(id) { return id !== null ? { id: id, correctedName: null } : trySpecies(); });
     }
-    return trySpecies().then(function(id) {
-      if (id !== null) return id;
-      var fuzzyId = fuzzyLocalLookup(parsed.baseKey);
-      if (fuzzyId !== null) return fuzzyId;
+    return trySpecies().then(function(speciesResult) {
+      if (speciesResult !== null) return speciesResult;
+      var fuzzyResult = fuzzyLocalLookup(parsed.baseKey);
+      if (fuzzyResult !== null) return { id: fuzzyResult.id, correctedName: keyToDisplayName(fuzzyResult.key) };
       if (root !== parsed.baseKey) {
-        var fuzzyRootId = fuzzyLocalLookup(root);
-        if (fuzzyRootId !== null) return fuzzyRootId;
+        var fuzzyRootResult = fuzzyLocalLookup(root);
+        if (fuzzyRootResult !== null) return { id: fuzzyRootResult.id, correctedName: keyToDisplayName(fuzzyRootResult.key) };
       }
       return null;
     });
@@ -587,14 +596,20 @@ function handleSpawn(raw) {
   if (spawnCooldowns[key] && (now - spawnCooldowns[key]) < SPAWN_COOLDOWN_MS) return;
   spawnCooldowns[key] = now;
   queueBanner(parsed.cleanName, 10000, function() {
-    resolveSprite(parsed, false).then(function(id) { if (id) spawnSprites(id); });
+    resolveSprite(parsed, false).then(function(result) {
+      if (result) spawnSprites(result.id);
+    });
   });
 }
 
 function handleBouncy(raw, sourceIndex) {
   var parsed = parseSpawnName(raw);
-  queueBanner(parsed.cleanName, 10000, function() {
-    resolveSprite(parsed, true).then(function(id) { if (id) spawnSprites(id, sourceIndex); });
+  // Show banner with typed name first, then correct it if fuzzy match found a better name
+  resolveSprite(parsed, true).then(function(result) {
+    var displayName = (result && result.correctedName) ? result.correctedName : parsed.cleanName;
+    queueBanner(displayName, 10000, function() {
+      if (result) spawnSprites(result.id, sourceIndex);
+    });
   });
 }
 
