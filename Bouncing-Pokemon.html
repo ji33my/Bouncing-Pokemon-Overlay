@@ -288,17 +288,45 @@ var bannerQueue=[],bannerBusy=false,bannerTimer=null;
 function queueBanner(name,durationMs,onShow){bannerQueue.push({name:name,durationMs:durationMs||10000,onShow:onShow||null});if(!bannerBusy)processQueue();}
 function processQueue(){if(bannerQueue.length===0){bannerBusy=false;return;}bannerBusy=true;var item=bannerQueue.shift();showBannerNow(item.name,item.durationMs,item.onShow);}
 
+function playCry(raw){
+  var slug=raw.toLowerCase()
+    .replace(/\s*\([^)]+\)/g,'')
+    .replace(/\u2640/g,'f')
+    .replace(/\u2642/g,'m')
+    .replace(/[^a-z0-9]/g,'');
+  var audio=new Audio('https://play.pokemonshowdown.com/audio/cries/'+slug+'.mp3');
+  audio.volume=0.5;
+  audio.play().catch(function(){});
+}
+
+function playCry(raw){
+  var slug=raw.toLowerCase()
+    .replace(/\s*\([^)]+\)/g,'')
+    .replace(/\u2640/g,'f')
+    .replace(/\u2642/g,'m')
+    .replace(/[^a-z0-9]/g,'');
+  var audio=new Audio('https://play.pokemonshowdown.com/audio/cries/'+slug+'.mp3');
+  audio.volume=0.5;
+  audio.play().catch(function(){});
+}
+
 function handleSpawn(raw){
   var parsed=parseSpawnName(raw),key=parsed.baseKey,now=Date.now();
   if(spawnCooldowns[key]&&(now-spawnCooldowns[key])<SPAWN_COOLDOWN_MS) return;
   spawnCooldowns[key]=now;
-  queueBanner(parsed.cleanName,10000,function(){resolveSprite(parsed,false).then(function(result){if(result)spawnSprites(result.id);});});
+  queueBanner(parsed.cleanName,10000,function(){
+    playCry(raw);
+    resolveSprite(parsed,false).then(function(result){if(result)spawnSprites(result.id);});
+  });
 }
 function handleBouncy(raw,sourceIndex){
   var parsed=parseSpawnName(raw);
   resolveSprite(parsed,true).then(function(result){
     var displayName=(result&&result.correctedName)?result.correctedName:parsed.cleanName;
-    queueBanner(displayName,10000,function(){if(result)spawnSprites(result.id,sourceIndex);});
+    queueBanner(displayName,10000,function(){
+      playCry(raw);
+      if(result)spawnSprites(result.id,sourceIndex);
+    });
   });
 }
 
