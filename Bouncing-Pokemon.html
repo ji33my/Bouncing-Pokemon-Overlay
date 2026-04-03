@@ -117,18 +117,21 @@ var WILDUSER_OFF_RE  = /^!wilduseroff$/i;
 var CLEARCHANNEL_RE  = /^!clearchannel$/i;
 var BOUNCYSPRITES_RE = /^!bouncysprites\s+(\d+)$/i;
 var BOUNCYVOLUME_RE  = /^!bouncyvolume\s+(\d+)$/i;
+var BOUNCYMONITORVOLUME_RE = /^!bouncymonitorvolume\s+(\d+)$/i;
 
 var spawnCooldowns    = {};
 var SPAWN_COOLDOWN_MS = 10000;
 var pokeSpritesCount  = parseInt(localStorage.getItem('bouncypoke_sprites')) || 10;
 var cryVolume         = parseFloat(localStorage.getItem('bouncypoke_volume')) || 0.5;
+var monitorVolume     = localStorage.getItem('bouncypoke_monitor_volume') !== null ? parseFloat(localStorage.getItem('bouncypoke_monitor_volume')) : cryVolume;
 var wildUserEnabled   = localStorage.getItem('bouncypoke_wilduser') === 'true';
 var wildUserSeen      = new Set();
 var streamerChannel   = '';
-var STORAGE_KEY           = 'bouncypoke_channel';
-var WILDUSER_STORAGE_KEY  = 'bouncypoke_wilduser';
-var SPRITES_STORAGE_KEY   = 'bouncypoke_sprites';
-var VOLUME_STORAGE_KEY    = 'bouncypoke_volume';
+var STORAGE_KEY             = 'bouncypoke_channel';
+var WILDUSER_STORAGE_KEY    = 'bouncypoke_wilduser';
+var SPRITES_STORAGE_KEY     = 'bouncypoke_sprites';
+var VOLUME_STORAGE_KEY      = 'bouncypoke_volume';
+var MONITOR_VOLUME_STORAGE_KEY = 'bouncypoke_monitor_volume';
 
 function startOverlay() {
   var input = document.getElementById('channel-input').value.trim().replace(/^#/, '').toLowerCase();
@@ -298,18 +301,7 @@ function playCry(raw){
     .replace(/\u2642/g,'m')
     .replace(/[^a-z0-9]/g,'');
   var audio=new Audio('https://play.pokemonshowdown.com/audio/cries/'+slug+'.mp3');
-  audio.volume=cryVolume;
-  audio.play().catch(function(){});
-}
-
-function playCry(raw){
-  var slug=raw.toLowerCase()
-    .replace(/\s*\([^)]+\)/g,'')
-    .replace(/\u2640/g,'f')
-    .replace(/\u2642/g,'m')
-    .replace(/[^a-z0-9]/g,'');
-  var audio=new Audio('https://play.pokemonshowdown.com/audio/cries/'+slug+'.mp3');
-  audio.volume=cryVolume;
+  audio.volume=monitorVolume;
   audio.play().catch(function(){});
 }
 
@@ -456,6 +448,8 @@ function parseLine(line,socket){
   if(bsMatch){var n=parseInt(bsMatch[1]);if(n>0&&n<=100){pokeSpritesCount=n;localStorage.setItem(SPRITES_STORAGE_KEY,n);}return;}
   var bvMatch=msg.match(BOUNCYVOLUME_RE);
   if(bvMatch){var v=parseInt(bvMatch[1]);if(v>=0&&v<=100){cryVolume=v/100;localStorage.setItem(VOLUME_STORAGE_KEY,cryVolume);}return;}
+  var bmvMatch=msg.match(BOUNCYMONITORVOLUME_RE);
+  if(bmvMatch){var mv=parseInt(bmvMatch[1]);if(mv>=0&&mv<=100){monitorVolume=mv/100;localStorage.setItem(MONITOR_VOLUME_STORAGE_KEY,monitorVolume);}return;}
   if(BOUNCY_POKEBALL_RE.test(msg)){spawnPokeballs();return;}
   var bouncy=msg.match(BOUNCY_RE);
   if(bouncy){handleBouncy(bouncy[1].trim(),bouncy[2]?parseInt(bouncy[2]):null);return;}
