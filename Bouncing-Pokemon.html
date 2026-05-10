@@ -509,12 +509,13 @@ function isModOrStreamer(nick,tags){
 function parseLine(line,socket){
   if(!line)return;
   if(line.indexOf('PING')===0){socket.send('PONG :tmi.twitch.tv');return;}
-  var tags={};
+  var tags={},msgLine=line;
   if(line.charAt(0)==='@'){
     var si=line.indexOf(' ');
     line.slice(1,si).split(';').forEach(function(p){var e=p.indexOf('=');if(e!==-1)tags[p.slice(0,e)]=p.slice(e+1);});
+    msgLine=line.slice(si+1);
   }
-  var m=line.match(/:([^!]+)![^ ]+ PRIVMSG #[^ ]+ :(.+)/);
+  var m=msgLine.match(/:([^!]+)![^ ]+ PRIVMSG #[^ ]+ :(.+)/);
   if(!m)return;
   var nick=m[1].toLowerCase(),msg=m[2].trim();
   if(msg.charCodeAt(0)===1) msg=msg.slice(8).replace(/\x01$/,'').trim();
