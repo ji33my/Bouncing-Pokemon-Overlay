@@ -117,6 +117,7 @@ var WILDUSER_OFF_RE  = /^!wilduseroff$/i;
 var CLEARCHANNEL_RE  = /^!clearchannel$/i;
 var BOUNCYSPRITES_RE = /^!bouncysprites\s+(\d+)$/i;
 var BOUNCYVOLUME_RE  = /^!bouncyvolume\s+(\d+)$/i;
+var BOUNCYUSER_RE    = /^!bouncyuser\s+(\S+)\s*$/i;
 
 var spawnCooldowns    = {};
 var SPAWN_COOLDOWN_MS = 10000;
@@ -325,13 +326,81 @@ function handleBouncy(raw,sourceIndex){
 
 var KNOWN_BOTS=new Set(['pokemoncommunitygame','nightbot','streamelements','streamlabs','moobot','wizebot','coebot','xanbot','ohbot','fossabot','buttsbot','sery_bot','soundalerts','kofistreambot','recommendedpokeball','robyul','logviewer','commanderroot','anotherttvviewer','twitchstreambot','stay_hydrated_bot','restreambot','elbierro_bot','botrixoficial','deusexmachina999','apricotdrupefruit','titlechange_bot','skinnyseahorse']);
 function isKnownBot(nick){if(KNOWN_BOTS.has(nick))return true;if(/bot$/i.test(nick))return true;if(/^bot/i.test(nick))return true;if(/_bot_?$/i.test(nick))return true;return false;}
+function fetchTwitchAvatar(nick){
+  return new Promise(function(resolve){
+    var settled=false;
+    function finish(v){if(!settled){settled=true;resolve(v);}}
+    setTimeout(function(){finish(null);},5000);
+
+    function isValidUrl(url){
+      if(!url||typeof url!=='string')return false;
+      var u=url.trim().toLowerCase();
+      return u.indexOf('http')===0&&u.indexOf('user-default')===-1;
+    }
+
+    function tryDecapi(){
+      fetch('https://decapi.me/twitch/avatar/'+encodeURIComponent(nick))
+        .then(function(r){return r.ok?r.text():null;})
+        .then(function(url){finish(isValidUrl(url)?url.trim():null);})
+        .catch(function(){finish(null);});
+    }
+
+    fetch('https://api.ivr.fi/v2/twitch/user?login='+encodeURIComponent(nick))
+      .then(function(r){return r.ok?r.json():null;})
+      .then(function(data){
+        var url=data&&data[0]&&(data[0].logo||data[0].profileImageURL||data[0].profile_image_url);
+        if(isValidUrl(url))return finish(url.trim());
+        tryDecapi();
+      })
+      .catch(function(){tryDecapi();});
+  });
+}
+
+function spawnProfilePics(imageUrl){
+  var W=overlay.offsetWidth,H=overlay.offsetHeight;
+  var size=80,fallbackDone=false;
+  for(var i=0;i<10;i++){
+    (function(idx){
+      var img=document.createElement('img');
+      var x=Math.random()*(W-size),y=Math.random()*(H-size-40);
+      var spd=1.2+Math.random()*2.2,ang=Math.random()*Math.PI*2;
+      var vx=Math.cos(ang)*spd,vy=Math.sin(ang)*spd;
+      img.src=imageUrl;
+      img.style.cssText='position:absolute;pointer-events:none;left:'+x+'px;top:'+y+'px;width:'+size+'px;height:'+size+'px;border-radius:50%;object-fit:cover;opacity:0;transition:opacity 0.4s;image-rendering:auto;';
+      img.onerror=function(){if(img.parentNode)img.parentNode.removeChild(img);if(idx===0&&!fallbackDone){fallbackDone=true;spawnPokeballs();}};
+      overlay.appendChild(img);
+      setTimeout(function(){img.style.opacity='1';},50);
+      var aid;
+      function step(){x+=vx;y+=vy;var maxX=W-size,maxY=H-size-40;if(x<=0){x=0;vx=Math.abs(vx);}if(x>=maxX){x=maxX;vx=-Math.abs(vx);}if(y<=0){y=0;vy=Math.abs(vy);}if(y>=maxY){y=maxY;vy=-Math.abs(vy);}img.style.left=x+'px';img.style.top=y+'px';aid=requestAnimationFrame(step);}
+      aid=requestAnimationFrame(step);
+      setTimeout(function(){cancelAnimationFrame(aid);img.style.transition='opacity 0.5s';img.style.opacity='0';setTimeout(function(){if(img.parentNode)img.parentNode.removeChild(img);},500);},10000);
+    })(i);
+  }
+}
+
+function handleBouncyUser(targetNick){
+  fetchTwitchAvatar(targetNick).then(function(avatarUrl){
+    if(avatarUrl){
+      queueBanner(targetNick,10000,function(){spawnProfilePics(avatarUrl);});
+    }else{
+      queueBanner(targetNick,10000,function(){spawnPokeballs();});
+    }
+  });
+}
+
 function handleUserJoin(nick){
   if(!wildUserEnabled)return;
   if(/^justinfan/i.test(nick))return;
   if(isKnownBot(nick))return;
   if(wildUserSeen.has(nick))return;
   wildUserSeen.add(nick);
-  queueBanner(nick,10000,function(){spawnPokeballs();});
+  fetchTwitchAvatar(nick).then(function(avatarUrl){
+    if(avatarUrl){
+      queueBanner(nick,10000,function(){spawnProfilePics(avatarUrl);});
+    }else{
+      queueBanner(nick,10000,function(){spawnPokeballs();});
+    }
+  });
 }
 
 var overlay=document.getElementById('overlay');
@@ -430,10 +499,21 @@ function showError(msg){var log=document.getElementById('error-log');var el=docu
 
 var connections={};
 function isWildUserAuthorized(nick){return WILDUSER_AUTH.indexOf(nick)!==-1;}
+function isModOrStreamer(nick,tags){
+  if(isWildUserAuthorized(nick))return true;
+  if(tags&&tags.mod==='1')return true;
+  var badges=(tags&&tags.badges)||'';
+  return badges.indexOf('moderator')!==-1||badges.indexOf('broadcaster')!==-1;
+}
 
 function parseLine(line,socket){
   if(!line)return;
   if(line.indexOf('PING')===0){socket.send('PONG :tmi.twitch.tv');return;}
+  var tags={};
+  if(line.charAt(0)==='@'){
+    var si=line.indexOf(' ');
+    line.slice(1,si).split(';').forEach(function(p){var e=p.indexOf('=');if(e!==-1)tags[p.slice(0,e)]=p.slice(e+1);});
+  }
   var m=line.match(/:([^!]+)![^ ]+ PRIVMSG #[^ ]+ :(.+)/);
   if(!m)return;
   var nick=m[1].toLowerCase(),msg=m[2].trim();
@@ -441,12 +521,14 @@ function parseLine(line,socket){
   handleUserJoin(nick);
   if(WILDUSER_ON_RE.test(msg)){if(isWildUserAuthorized(nick)){wildUserEnabled=true;localStorage.setItem(WILDUSER_STORAGE_KEY,'true');wildUserSeen=new Set();}return;}
   if(WILDUSER_OFF_RE.test(msg)){if(isWildUserAuthorized(nick)){wildUserEnabled=false;localStorage.setItem(WILDUSER_STORAGE_KEY,'false');wildUserSeen=new Set();}return;}
-  if(CLEARCHANNEL_RE.test(msg)){clearChannel();return;}
+  if(CLEARCHANNEL_RE.test(msg)){if(isWildUserAuthorized(nick)){clearChannel();}return;}
   var bsMatch=msg.match(BOUNCYSPRITES_RE);
   if(bsMatch){var n=parseInt(bsMatch[1]);if(n>0&&n<=100){pokeSpritesCount=n;localStorage.setItem(SPRITES_STORAGE_KEY,n);}return;}
   var bvMatch=msg.match(BOUNCYVOLUME_RE);
   if(bvMatch){var v=parseInt(bvMatch[1]);if(v>=0&&v<=100){cryVolume=v/100;localStorage.setItem(VOLUME_STORAGE_KEY,cryVolume);}return;}
   if(BOUNCY_POKEBALL_RE.test(msg)){spawnPokeballs();return;}
+  var buMatch=msg.match(BOUNCYUSER_RE);
+  if(buMatch){if(isModOrStreamer(nick,tags)){handleBouncyUser(buMatch[1].trim());}return;}
   var bouncy=msg.match(BOUNCY_RE);
   if(bouncy){handleBouncy(bouncy[1].trim(),bouncy[2]?parseInt(bouncy[2]):null);return;}
   if(nick!=='pokemoncommunitygame')return;
@@ -464,7 +546,7 @@ function connectChannel(channel){
   catch(e){showError('ERROR: Could not connect to #'+channel+' — '+e.message);return;}
   state.ws=ws;
   var nick='justinfan'+Math.floor(Math.random()*99999);
-  ws.onopen=function(){ws.send('PASS SCHMOOPIIE');ws.send('NICK '+nick);ws.send('JOIN #'+channel);state.pingTimer=setInterval(function(){if(ws&&ws.readyState===1)ws.send('PING :tmi.twitch.tv');},240000);state.attempts=0;};
+  ws.onopen=function(){ws.send('PASS SCHMOOPIIE');ws.send('NICK '+nick);ws.send('CAP REQ :twitch.tv/tags');ws.send('JOIN #'+channel);state.pingTimer=setInterval(function(){if(ws&&ws.readyState===1)ws.send('PING :tmi.twitch.tv');},240000);state.attempts=0;};
   ws.onmessage=function(e){e.data.split('\r\n').forEach(function(line){parseLine(line,ws);});};
   ws.onerror=function(){showError('ERROR: WebSocket failed for #'+channel);};
   ws.onclose=function(){clearInterval(state.pingTimer);state.attempts++;var delay=Math.min(state.attempts*3000,30000);if(state.attempts<=10){showError('DISCONNECTED from #'+channel+' — reconnecting in '+(delay/1000)+'s ('+state.attempts+'/10)');state.reconnTimer=setTimeout(function(){connectChannel(channel);},delay);}else{showError('FAILED: Could not reconnect to #'+channel+' after 10 attempts. Reload the page.');}};
