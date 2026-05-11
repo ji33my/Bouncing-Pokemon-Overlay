@@ -41,9 +41,23 @@
   #error-log { position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%); z-index: 40; display: flex; flex-direction: column; gap: 6px; align-items: center; pointer-events: none; width: max-content; max-width: 90%; }
   .err-msg { background: rgba(180,20,20,0.92); border: 1px solid #ef4444; border-radius: 6px; color: #fff; font-size: 8px; padding: 8px 14px; letter-spacing: 1px; animation: fadeout 5s forwards; white-space: nowrap; }
   @keyframes fadeout { 0%{opacity:1} 70%{opacity:1} 100%{opacity:0} }
+  #stage {
+    position: fixed; bottom: 0; left: 0; width: 100%;
+    display: none; justify-content: space-evenly; align-items: flex-end;
+    padding-bottom: 10px; pointer-events: none; z-index: 5;
+  }
+  .slot { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+  .slot img { width: 100px; height: 100px; image-rendering: pixelated; animation: float 3s ease-in-out infinite; }
+  .slot:nth-child(1) img { animation-delay: 0s; }
+  .slot:nth-child(2) img { animation-delay: 0.6s; }
+  .slot:nth-child(3) img { animation-delay: 1.2s; }
+  .slot:nth-child(4) img { animation-delay: 1.8s; }
+  @keyframes float { 0%, 100% { transform: translateY(0px); } 50% { transform: translateY(-10px); } }
+  #smoke-canvas { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 4; }
 </style>
 </head>
 <body>
+<canvas id="smoke-canvas"></canvas>
 <div id="setup-screen">
   <div class="setup-card">
     <div class="setup-label">Your Twitch Channel</div>
@@ -76,7 +90,73 @@
   </div>
   <div id="error-log"></div>
 </div>
+<div id="stage">
+  <div class="slot"><img src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/showdown/94.gif" alt="Gengar"></div>
+  <div class="slot"><img src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/showdown/94.gif" alt="Gengar"></div>
+  <div class="slot"><img src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/showdown/491.gif" alt="Darkrai"></div>
+  <div class="slot"><img src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/showdown/491.gif" alt="Darkrai"></div>
+</div>
 <script>
+(function(){
+  var sc=document.getElementById('smoke-canvas');
+  var sctx=sc.getContext('2d');
+  function resizeSmoke(){sc.width=window.innerWidth;sc.height=window.innerHeight;}
+  resizeSmoke();
+  window.addEventListener('resize',resizeSmoke);
+  var sparticles=[],smokeActive=false,smokeTimer=0,smokeDuration=500;
+  var stageRef=null,peakCount=0;
+  function SParticle(){this.reset();}
+  SParticle.prototype.reset=function(){
+    this.x=Math.random()*sc.width;
+    this.y=sc.height+30;
+    this.vx=(Math.random()-0.5)*2.5;
+    this.vy=-(Math.random()*3.0+0.8);
+    this.radius=Math.random()*80+50;
+    this.alpha=Math.random()*0.35+0.10;
+    this.alphaDecay=Math.random()*0.001+0.0008;
+    this.grow=Math.random()*0.8+0.3;
+    this.hue=Math.random()<0.5?200+Math.random()*40:270+Math.random()*30;
+    this.drift=(Math.random()-0.5)*0.03;
+    this.alive=true;
+  };
+  SParticle.prototype.update=function(){
+    this.x+=this.vx;this.vx+=this.drift;this.y+=this.vy;
+    this.radius+=this.grow;this.alpha-=this.alphaDecay;
+    if(this.alpha<=0)this.alive=false;
+  };
+  SParticle.prototype.draw=function(){
+    var g=sctx.createRadialGradient(this.x,this.y,0,this.x,this.y,this.radius);
+    g.addColorStop(0,'hsla('+this.hue+',60%,70%,'+this.alpha+')');
+    g.addColorStop(1,'hsla('+this.hue+',40%,40%,0)');
+    sctx.beginPath();sctx.arc(this.x,this.y,this.radius,0,Math.PI*2);
+    sctx.fillStyle=g;sctx.fill();
+  };
+  window.triggerSmoke=function(stage){
+    smokeActive=true;smokeTimer=0;peakCount=0;
+    stageRef=stage||null;
+    if(stageRef){stageRef.style.opacity='1';}
+  };
+  (function smokeLoop(){
+    sctx.clearRect(0,0,sc.width,sc.height);
+    if(smokeActive&&smokeTimer<smokeDuration){
+      smokeTimer++;
+      if(smokeTimer%2===0){for(var i=0;i<6;i++)sparticles.push(new SParticle());}
+      if(smokeTimer>=smokeDuration){smokeActive=false;peakCount=sparticles.length;}
+    }
+    for(var i=sparticles.length-1;i>=0;i--){
+      sparticles[i].update();sparticles[i].draw();
+      if(!sparticles[i].alive)sparticles.splice(i,1);
+    }
+    if(!smokeActive&&stageRef){
+      if(peakCount>0)stageRef.style.opacity=Math.max(0,sparticles.length/peakCount).toFixed(3);
+      if(sparticles.length===0){
+        stageRef.style.display='none';stageRef.style.opacity='';stageRef=null;
+      }
+    }
+    requestAnimationFrame(smokeLoop);
+  })();
+})();
+
 var STATIC_CHANNELS = [];
 var WILDUSER_AUTH   = [];
 
@@ -118,6 +198,7 @@ var CLEARCHANNEL_RE  = /^!clearchannel$/i;
 var BOUNCYSPRITES_RE = /^!bouncysprites\s+(\d+)$/i;
 var BOUNCYVOLUME_RE  = /^!bouncyvolume\s+(\d+)$/i;
 var BOUNCYUSER_RE    = /^!bouncyuser\s+(\S+)\s*$/i;
+var SMOKE_RE         = /^!smoke$/i;
 
 var spawnCooldowns    = {};
 var SPAWN_COOLDOWN_MS = 10000;
@@ -378,6 +459,12 @@ function spawnProfilePics(imageUrl){
   }
 }
 
+function handleSmoke(){
+  var stage=document.getElementById('stage');
+  stage.style.display='flex';
+  if(window.triggerSmoke)window.triggerSmoke(stage);
+}
+
 function handleBouncyUser(targetNick){
   fetchTwitchAvatar(targetNick).then(function(avatarUrl){
     if(avatarUrl){
@@ -528,6 +615,7 @@ function parseLine(line,socket){
   var bvMatch=msg.match(BOUNCYVOLUME_RE);
   if(bvMatch){var v=parseInt(bvMatch[1]);if(v>=0&&v<=100){cryVolume=v/100;localStorage.setItem(VOLUME_STORAGE_KEY,cryVolume);}return;}
   if(BOUNCY_POKEBALL_RE.test(msg)){spawnPokeballs();return;}
+  if(SMOKE_RE.test(msg)){handleSmoke();return;}
   var buMatch=msg.match(BOUNCYUSER_RE);
   if(buMatch){if(isModOrStreamer(nick,tags)){handleBouncyUser(buMatch[1].trim());}return;}
   var bouncy=msg.match(BOUNCY_RE);
